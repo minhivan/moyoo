@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+:root {
+  --font-app: 'Google Sans Flex', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  --bg-app: #F7F5F0;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F0EDE6;
+  --bg-card: #FFFFFF;
+  --text-main: #141413;
+  --text-muted: #6B6862;
+  --text-subtle: #9E9B95;
+  --border-light: #E7E3DB;
+  --border-strong: #CDC7BD;
+  --accent: #141413;
+  --accent-tint: #E8E5DD;
+  
+  font-family: var(--font-app);
+  color: var(--text-main);
+  background: var(--bg-app);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  font-family: var(--font-app);
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: smooth;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  min-width: 320px;
+  background: var(--bg-app);
+  color: var(--text-main);
+  touch-action: manipulation;
+  overflow-x: hidden;
+  font-family: var(--font-app);
+}
+
+button, a, input, select, textarea {
+  font-family: var(--font-app);
+}
+
+button {
+  cursor: pointer;
+  user-select: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--text-main);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: #DEDAD1;
+  color: #141413;
+}
