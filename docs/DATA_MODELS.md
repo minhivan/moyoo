@@ -1,115 +1,59 @@
-# Data Models & Catalog Schemas
+# Kiểu dữ liệu và catalog
 
-This document defines all TypeScript data models, frame catalogs, filter configurations, and internationalization schemas.
+Đối chiếu source ngày **2026-11-02**. Nguồn: `src/data/frames.ts`, `src/lib/photo.ts`, `src/lib/i18n.ts`, state trong `src/App.tsx`. Chưa có schema database hay model người dùng.
 
----
+## Catalog
 
-## 1. Frame Catalog (`src/data/frames.ts`)
+| Kiểu | Trường hoặc giá trị |
+| --- | --- |
+| `Frame` | `id`, `name` (VI), `nameEn`, `background`, `ink`, `stage` |
+| `PhotoFilter` | `id`, `nameVi`, `nameEn`, `cssFilter` |
+| `TemplateId` | `single`, `duo`, `strip-3`, `strip-4`, `grid-2x2`, `grid-6`, `film-4` |
+| `TemplateOption` | `id`, `nameVi`, `nameEn`, `count: 1 \| 2 \| 3 \| 4 \| 6`, `slotAspect` (rộng/cao một ô), `column` (ô xếp một cột, khung ngắm hiện cột dải ảnh) |
+| `StampStyle` | `letterpress` (Ghi chú), `timestamp` (Dấu ngày giờ), `clean` (Tối giản) |
+| `PaperFinish` | `matte` (Giấy lì), `glossy` (Giấy bóng), `fiber` (Giấy sợi) |
 
-```ts
-export type Frame = {
-  id: string          // Unique identifier (used in CSS classes .mini-strip--{id})
-  name: string        // Vietnamese label
-  nameEn: string      // English label
-  background: string  // Hex color for paper background and Canvas fill
-  ink: string         // Hex color for typography and branding
-  stage: string       // Ambient backdrop tint for the frame
-}
-```
+`getTemplate(id)` trả `TemplateOption`. Chế độ chụp chính là template: thanh chế độ ở camera hiển thị cả ba.
 
-### Registered Frames:
-| ID | Vietnamese Name | English Name | Background (`background`) | Ink (`ink`) | Stage (`stage`) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `cream` | Kem | Cream | `#F4EFEB` | `#2B2927` | `#EDE8E3` |
-| `noir` | Đen | Noir | `#1C1B1A` | `#F5F3EF` | `#2E2C2A` |
-| `butter` | Butter | Butter | `#F5E8BA` | `#4A422D` | `#EDE0B2` |
-| `blush` | Blush Note | Blush Note | `#F0CDCE` | `#57373A` | `#E5BFBF` |
-| `blue` | Blue | Blue | `#C9D8E6` | `#324A5E` | `#BCCDD9` |
-| `sage` | Sage | Sage | `#CBD5C8` | `#30422E` | `#BDC7B9` |
+### Sáu màu giấy
 
----
+| ID | VI / EN | Background | Ink |
+| --- | --- | --- | --- |
+| `cream` | Kem / Cream | `#F4EFEB` | `#2B2927` |
+| `noir` | Đen / Noir | `#1C1B1A` | `#F5F3EF` |
+| `butter` | Bơ / Butter | `#F5E8BA` | `#4A422D` |
+| `blush` | Hồng phấn / Blush Note | `#F0CDCE` | `#57373A` |
+| `blue` | Xanh dương / Blue | `#C9D8E6` | `#324A5E` |
+| `sage` | Xanh lá / Sage | `#CBD5C8` | `#30422E` |
 
-## 2. Photo Filters Catalog
+`stage` vẫn có trong model nhưng UI hiện không đọc.
 
-```ts
-export type PhotoFilter = {
-  id: string
-  nameVi: string
-  nameEn: string
-  cssFilter: string // Standard CSS filter string applied to video & Canvas
-}
-```
+### Sáu bộ lọc
 
-| ID | Vietnamese | English | CSS Filter String |
-| :--- | :--- | :--- | :--- |
-| `normal` | Gốc | Original | `none` |
-| `vintage` | Film | Film | `sepia(0.3) contrast(1.15) brightness(1.03) saturate(1.2)` |
-| `mono` | Đen trắng | B&W | `grayscale(1) contrast(1.25) brightness(1.02)` |
-| `warm` | Tông ấm | Warm | `sepia(0.15) saturate(1.3) brightness(1.04) contrast(1.04)` |
-| `cool` | Tông lạnh | Cool | `contrast(1.08) brightness(1.02) saturate(0.88) hue-rotate(15deg)` |
-| `fade` | Mờ nhẹ | Faded | `brightness(1.06) contrast(0.92) saturate(1.1)` |
+`normal` (Gốc), `vintage` (Film), `mono` (Đen trắng), `warm` (Tông ấm), `cool` (Tông lạnh), `fade` (Mờ nhẹ). Chuỗi `cssFilter` áp cho video, preview và Canvas.
 
----
+## Phiên
 
-## 3. Template Layouts
+- `step`: `camera | review`.
+- `templateId` mặc định `strip-4`; frame `cream`, filter `normal`, stamp `letterpress`, paper `matte`, ghi chú rỗng (tối đa 28 ký tự ở input).
+- `photos: Array<string | null>` dài bằng `count`; `null` là ô trống.
+- `shotDate: Date` lúc ảnh đầu tiên của bộ vào.
+- `retakeSlot`, `developingSlot`: `number | null`.
+- `timerSeconds: 3 | 5` (mặc định 3), `autoPaced` mặc định bật, `facingMode` mặc định `user`, âm thanh bật.
+
+## PrintOptions
 
 ```ts
-export type TemplateId = 'strip-4' | 'grid-2x2'
-
-export type TemplateOption = {
-  id: TemplateId
-  nameVi: string
-  nameEn: string
-  tagVi: string
-  tagEn: string
-}
-```
-
----
-
-## 4. Stamps & Archival Papers
-
-```ts
-export type StampStyle = 'letterpress' | 'timestamp' | 'clean'
-
-export interface StampOption {
-  id: StampStyle
-  nameVi: string
-  nameEn: string
-  previewText: string
-}
-
-export type PaperFinish = 'matte' | 'glossy' | 'fiber'
-
-export interface PaperFinishOption {
-  id: PaperFinish
-  nameVi: string
-  nameEn: string
-}
-```
-
----
-
-## 5. Strip Options (`src/lib/photo.ts`)
-
-```ts
-export interface StripOptions {
+interface PrintOptions {
   template?: TemplateId
   filterCss?: string
-  dateText?: string
+  date?: Date
   customNote?: string
   stampStyle?: StampStyle
   paperFinish?: PaperFinish
 }
 ```
 
----
+## Ngôn ngữ
 
-## 6. Internationalization (`src/lib/i18n.ts`)
-- **Languages**: `'vi'` (Vietnamese - Default) | `'en'` (English).
-- **Structure**: Strongly typed dictionary covering:
-  - `welcomeHeading`, `welcomeSubtitle`, `welcomeCta`
-  - `tabFrame`, `tabTemplate`, `tabFilter`, `tabStamp`, `tabFinish`
-  - `signatureLabel`, `signaturePlaceholder`
-  - `retakeSingleSlot`, `retakeThisPhoto`, `downloadSingleCuts`, `copyStripBtn`
-  - Camera error dialogues and permission alerts.
+`translations: Record<Language, Dictionary>`; `Dictionary` được suy ra từ bản tiếng Việt nên bản tiếng Anh phải đủ khóa (TypeScript bắt lỗi). `fill(template, values)` thay `{key}`. Toàn bộ chữ giao diện nằm trong dictionary; chỉ tên catalog (frame/filter/template/stamp/paper) nằm trong `frames.ts`.

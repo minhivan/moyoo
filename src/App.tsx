@@ -1,1226 +1,657 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import {
-  ArrowLeft,
-  Camera,
-  Check,
-  Copy,
-  Download,
-  FlipHorizontal,
-  HelpCircle,
-  Image as ImageIcon,
-  Layers,
-  Palette,
-  RotateCcw,
-  SlidersHorizontal,
-  Upload,
-  Volume2,
-  VolumeX,
-  X,
-} from 'lucide-react'
+import { Settings2, Volume2, VolumeX, X } from 'lucide-react'
 import {
   frames,
-  paperFinishes,
+  getTemplate,
   photoFilters,
-  samplePhotos,
-  stampOptions,
-  templateOptions,
+  TEMPLATE_IDS,
   type Frame,
   type PaperFinish,
   type PhotoFilter,
   type StampStyle,
   type TemplateId,
 } from './data/frames'
-import {
-  captureFrame,
-  copyStripToClipboard,
-  downloadSingleCut,
-  downloadStrip,
-  readImageFile,
-} from './lib/photo'
-import {
-  playFilmAdvanceSound,
-  playShutterSound,
-  playTapSound,
-} from './lib/sound'
-import { translations, type Language } from './lib/i18n'
-import { MiniStrip } from './components/MiniStrip'
-import { Welcome } from './components/Welcome'
+import { captureFrame, copyPrintToClipboard, downloadPrint, downloadSingleCut, readImageFile } from './lib/photo'
+import { playFilmAdvanceSound, playShutterSound, playTapSound } from './lib/sound'
+import { translations, type Dictionary, type Language } from './lib/i18n'
+import { CameraScreen, type CameraStatus } from './components/CameraScreen'
+import { CameraError, classifyCameraError, detectBrowser, openCameraStream, watchCameraPermission } from './lib/camera'
+import { SettingsSheet } from './components/SettingsSheet'
+import { ReviewScreen } from './components/ReviewScreen'
+import { InstallSheet } from './components/InstallSheet'
+import { useInstall } from './lib/install'
 import './App.css'
-import './Experience.css'
 
-type Step = 'welcome' | 'select' | 'camera' | 'result'
-type StudioTab = 'frame' | 'template' | 'filter' | 'stamp' | 'paper'
-const PHOTO_COUNT = 4
+type Step = 'camera' | 'review'
+type Toast = { id: number; message: string; tone: 'info' | 'error' }
+
+const AUTO_GAP_MS = 1400
+const DEVELOP_MS = 1200
+
+function readSavedLanguage(): Language {
+  try {
+    const saved = localStorage.getItem('moyoo_lang')
+    if (saved === 'vi' || saved === 'en') return saved
+  } catch {
+    // Storage can be blocked; Vietnamese is the default.
+  }
+  return 'vi'
+}
+
+/** Home-screen shortcuts open with ?mode=<template id>. */
+function readLaunchMode(): TemplateId {
+  try {
+    const mode = new URLSearchParams(window.location.search).get('mode')
+    if (mode && (TEMPLATE_IDS as string[]).includes(mode)) return mode as TemplateId
+  } catch {
+    // Fall through to the default.
+  }
+  return 'strip-4'
+}
+
+const emptySlots = (count: number): Array<string | null> => Array.from({ length: count }, () => null)
+const isFull = (photos: Array<string | null>) => photos.every(Boolean)
 
 export default function App() {
-  const [lang, setLang] = useState<Language>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('moyoo_lang')
-      if (saved === 'vi' || saved === 'en') return saved
-    }
-    return 'vi'
-  })
+  const [lang, setLang] = useState<Language>(readSavedLanguage)
+  const [soundOn, setSoundOn] = useState(true)
+  const [step, setStep] = useState<Step>('camera')
 
-  // Start on Welcome screen
-  const [step, setStep] = useState<Step>('welcome')
+  const [templateId, setTemplateId] = useState<TemplateId>(readLaunchMode)
+  const [frame, setFrame] = useState<Frame>(frames[0])
+  const [filter, setFilter] = useState<PhotoFilter>(photoFilters[0])
+  const [stamp, setStamp] = useState<StampStyle>('letterpress')
+  const [paper, setPaper] = useState<PaperFinish>('matte')
+  const [note, setNote] = useState('')
 
-  // Start with Cream so Blush Note is unpressed for selection
-  const [selectedFrame, setSelectedFrame] = useState<Frame>(frames[0])
-  const [selectedFilter, setSelectedFilter] = useState<PhotoFilter>(photoFilters[0])
-  const [selectedTemplate, setSelectedTemplate] = useState<TemplateId>('strip-4')
-  const [selectedStamp, setSelectedStamp] = useState<StampStyle>('letterpress')
-  const [selectedPaper, setSelectedPaper] = useState<PaperFinish>('matte')
-  const [customNote, setCustomNote] = useState<string>('')
-  const [activeSlot, setActiveSlot] = useState<number | null>(null)
-  const [retakeSlotIndex, setRetakeSlotIndex] = useState<number | null>(null)
-  const [developingIndex, setDevelopingIndex] = useState<number | null>(null)
+  const [photos, setPhotos] = useState<Array<string | null>>(() => emptySlots(getTemplate(readLaunchMode()).count))
+  const [shotDate, setShotDate] = useState(() => new Date())
+  const [retakeSlot, setRetakeSlot] = useState<number | null>(null)
+  const [developingSlot, setDevelopingSlot] = useState<number | null>(null)
+
+  const [status, setStatus] = useState<CameraStatus>('idle')
+  const [cameraError, setCameraError] = useState<CameraError | null>(null)
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
   const [timerSeconds, setTimerSeconds] = useState<3 | 5>(3)
   const [autoPaced, setAutoPaced] = useState(true)
-  const [copiedToast, setCopiedToast] = useState(false)
-  const [activeTab, setActiveTab] = useState<StudioTab>('frame')
-
-  const [photos, setPhotos] = useState<string[]>([])
   const [countdown, setCountdown] = useState<number | null>(null)
-  const [cameraError, setCameraError] = useState('')
-  const [cameraReady, setCameraReady] = useState(false)
-  const [soundEnabled, setSoundEnabled] = useState(true)
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
-  const [flashActive, setFlashActive] = useState(false)
+  const [flash, setFlash] = useState(false)
+
+  const [toast, setToast] = useState<Toast | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [installOpen, setInstallOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [browser] = useState(() => detectBrowser())
+  const install = useInstall()
+
+  const t: Dictionary = translations[lang]
+  const template = getTemplate(templateId)
 
   const videoRef = useRef<HTMLVideoElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const timerRef = useRef<number | null>(null)
-  const autoTimerRef = useRef<number | null>(null)
-  const cameraRequestRef = useRef(0)
+  const boxRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const requestRef = useRef(0)
+  const countdownRef = useRef<number | null>(null)
+  const autoRef = useRef<number | null>(null)
+  const photosRef = useRef(photos)
 
-  const t = translations[lang]
-
-  function switchLanguage(newLang: Language) {
-    setLang(newLang)
-    try {
-      localStorage.setItem('moyoo_lang', newLang)
-    } catch {
-      // ignore
-    }
-  }
-
-  function stopCamera() {
-    cameraRequestRef.current += 1
-    if (autoTimerRef.current) window.clearTimeout(autoTimerRef.current)
-    autoTimerRef.current = null
-    if (timerRef.current) window.clearInterval(timerRef.current)
-    timerRef.current = null
-    setCountdown(null)
-    streamRef.current?.getTracks().forEach((track) => track.stop())
-    streamRef.current = null
-    setCameraReady(false)
-  }
-
+  // Latest settings for timer callbacks, so a running auto sequence follows changes.
+  const latest = useRef({ timerSeconds, autoPaced, soundOn, facingMode, retakeSlot, templateId, step })
   useEffect(() => {
-    return () => {
-      cameraRequestRef.current += 1
-      streamRef.current?.getTracks().forEach((track) => track.stop())
-      if (autoTimerRef.current) window.clearTimeout(autoTimerRef.current)
-      if (timerRef.current) window.clearInterval(timerRef.current)
-    }
+    latest.current = { timerSeconds, autoPaced, soundOn, facingMode, retakeSlot, templateId, step }
+  })
+
+  const commitPhotos = useCallback((next: Array<string | null>) => {
+    photosRef.current = next
+    setPhotos(next)
+  }, [])
+
+  const tap = () => {
+    if (latest.current.soundOn) playTapSound()
+  }
+
+  const showToast = useCallback((message: string, tone: Toast['tone'] = 'info') => {
+    setToast({ id: Date.now(), message, tone })
   }, [])
 
   useEffect(() => {
-    if (step !== 'camera' || !streamRef.current || !videoRef.current) return
-    videoRef.current.srcObject = streamRef.current
-    void videoRef.current
-      .play()
-      .catch(() => setCameraError(t.cameraNotFoundAlert))
-  }, [step, cameraReady, t.cameraNotFoundAlert])
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(null), 3200)
+    return () => window.clearTimeout(timer)
+  }, [toast])
 
-  async function startCamera(mode = facingMode) {
-    setStep('camera')
-    setCameraError('')
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError(
-        lang === 'vi'
-          ? 'Trình duyệt này không hỗ trợ camera hoặc trang chưa chạy qua HTTPS/localhost.'
-          : 'Browser does not support camera or page is not running over HTTPS/localhost.'
-      )
-      return
-    }
-    try {
+  const clearTimers = useCallback(() => {
+    if (countdownRef.current) window.clearInterval(countdownRef.current)
+    if (autoRef.current) window.clearTimeout(autoRef.current)
+    countdownRef.current = null
+    autoRef.current = null
+    setCountdown(null)
+  }, [])
+
+  const stopCamera = useCallback(() => {
+    requestRef.current += 1
+    clearTimers()
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+    setStatus((current) => (current === 'error' ? current : 'idle'))
+  }, [clearTimers])
+
+  const startCamera = useCallback(
+    async (mode: 'user' | 'environment' = latest.current.facingMode) => {
       stopCamera()
-      const request = cameraRequestRef.current
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode: mode,
-          width: { ideal: 1280 },
-          height: { ideal: 960 },
-        },
-      })
-      if (request !== cameraRequestRef.current) {
-        stream.getTracks().forEach((track) => track.stop())
+      setCameraError(null)
+      const request = requestRef.current
+      setStatus('starting')
+      try {
+        const stream = await openCameraStream(mode)
+        if (request !== requestRef.current) {
+          stream.getTracks().forEach((track) => track.stop())
+          return
+        }
+        streamRef.current = stream
+        setStatus('ready')
+      } catch (error) {
+        if (request !== requestRef.current) return
+        setCameraError(classifyCameraError(error))
+        setStatus('error')
+      }
+    },
+    [stopCamera]
+  )
+
+  // Attach the stream once the video element and stream both exist.
+  useEffect(() => {
+    const video = videoRef.current
+    if (step !== 'camera' || status !== 'ready' || !video || !streamRef.current) return
+    video.srcObject = streamRef.current
+    void video.play().catch((error: unknown) => {
+      // A newer srcObject interrupting play() is not a failure.
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      setCameraError(classifyCameraError(error))
+      setStatus('error')
+    })
+  }, [step, status])
+
+  // Read the camera permission up front: granted opens the live view, denied explains the
+  // fix before anyone taps, and switching access back on reopens the camera by itself.
+  useEffect(() => {
+    let cancelled = false
+    let stop = () => {}
+    const apply = (state: PermissionState) => {
+      if (cancelled || latest.current.step !== 'camera') return
+      if (state === 'granted') {
+        if (!streamRef.current) void startCamera()
+      } else if (state === 'denied') {
+        stopCamera()
+        setCameraError(new CameraError('cameraDenied', 'PermissionState', 'denied'))
+        setStatus('error')
+      } else {
+        setCameraError(null)
+        setStatus((current) => (current === 'error' ? 'idle' : current))
+      }
+    }
+    void watchCameraPermission(apply).then((watcher) => {
+      if (cancelled) {
+        watcher.stop()
         return
       }
-      streamRef.current = stream
-      setCameraReady(true)
-    } catch (error) {
-      const name = error instanceof DOMException ? error.name : ''
-      setCameraError(name === 'NotAllowedError' ? t.cameraDeniedAlert : t.cameraNotFoundAlert)
+      stop = watcher.stop
+      if (watcher.state !== 'unknown') apply(watcher.state)
+    })
+    return () => {
+      cancelled = true
+      stop()
+    }
+  }, [startCamera, stopCamera])
+
+  useEffect(
+    () => () => {
+      requestRef.current += 1
+      streamRef.current?.getTracks().forEach((track) => track.stop())
+      if (countdownRef.current) window.clearInterval(countdownRef.current)
+      if (autoRef.current) window.clearTimeout(autoRef.current)
+    },
+    []
+  )
+
+  const markDeveloping = (index: number) => {
+    setDevelopingSlot(index)
+    window.setTimeout(() => setDevelopingSlot((current) => (current === index ? null : current)), DEVELOP_MS)
+  }
+
+  const goReview = useCallback(() => {
+    stopCamera()
+    setSaved(false)
+    setStep('review')
+  }, [stopCamera])
+
+  const capture = () => {
+    const settings = latest.current
+    const box = boxRef.current
+    const current = getTemplate(settings.templateId)
+    const boxRect = box?.getBoundingClientRect()
+    const maskRect = box?.querySelector('.vf__mask')?.getBoundingClientRect()
+    const mask =
+      boxRect && maskRect && boxRect.width > 0 && boxRect.height > 0
+        ? {
+            x: (maskRect.left - boxRect.left) / boxRect.width,
+            y: (maskRect.top - boxRect.top) / boxRect.height,
+            w: maskRect.width / boxRect.width,
+            h: maskRect.height / boxRect.height,
+          }
+        : undefined
+    const image = captureFrame(videoRef.current, {
+      aspect: current.slotAspect,
+      boxAspect: boxRect && boxRect.height ? boxRect.width / boxRect.height : 3 / 4,
+      mask,
+      mirror: settings.facingMode === 'user',
+    })
+    if (settings.soundOn) {
+      playShutterSound()
+      window.setTimeout(playFilmAdvanceSound, 160)
+    }
+    setFlash(true)
+    window.setTimeout(() => setFlash(false), 260)
+    if (!image) {
+      showToast(t.captureFailed, 'error')
+      return
+    }
+
+    const before = photosRef.current
+    const target = settings.retakeSlot ?? before.findIndex((photo) => !photo)
+    if (target < 0) return
+    const next = [...before]
+    next[target] = image
+    commitPhotos(next)
+    markDeveloping(target)
+    if (before.every((photo) => !photo)) setShotDate(new Date())
+
+    if (settings.retakeSlot !== null) {
+      setRetakeSlot(null)
+      if (isFull(next)) goReview()
+      return
+    }
+    if (isFull(next)) {
+      goReview()
+    } else if (settings.autoPaced) {
+      autoRef.current = window.setTimeout(() => {
+        autoRef.current = null
+        runCountdown()
+      }, AUTO_GAP_MS)
     }
   }
 
-  function toggleCameraFlip() {
-    const nextMode = facingMode === 'user' ? 'environment' : 'user'
-    setFacingMode(nextMode)
-    void startCamera(nextMode)
-  }
-
-  function startRetakeSlot(slotIndex: number) {
-    if (soundEnabled) playTapSound()
-    setRetakeSlotIndex(slotIndex)
-    setActiveSlot(null)
-    void startCamera()
-  }
-
-  function takePhoto(currentPhotos = photos) {
-    if (timerRef.current || autoTimerRef.current || !cameraReady || !streamRef.current || !videoRef.current) return
-    if (retakeSlotIndex === null && currentPhotos.filter(Boolean).length >= PHOTO_COUNT) return
-
-    let count = timerSeconds
+  function runCountdown() {
+    if (countdownRef.current || !streamRef.current) return
+    let count = latest.current.timerSeconds
     setCountdown(count)
-    timerRef.current = window.setInterval(() => {
+    countdownRef.current = window.setInterval(() => {
       count -= 1
       if (count > 0) {
         setCountdown(count)
         return
       }
-      if (timerRef.current) window.clearInterval(timerRef.current)
-      timerRef.current = null
+      if (countdownRef.current) window.clearInterval(countdownRef.current)
+      countdownRef.current = null
       setCountdown(null)
-
-      if (soundEnabled) {
-        playShutterSound()
-        window.setTimeout(() => playFilmAdvanceSound(), 160)
-      }
-
-      setFlashActive(true)
-      window.setTimeout(() => setFlashActive(false), 240)
-
-      const image = captureFrame(videoRef.current, 'none', facingMode === 'user')
-      if (!image) {
-        setCameraError(
-          lang === 'vi'
-            ? 'Chưa lấy được hình ảnh. Vui lòng thử lại.'
-            : 'Could not capture frame. Please retry.'
-        )
-        return
-      }
-
-      if (retakeSlotIndex !== null) {
-        const targetIndex = retakeSlotIndex
-        const next = [...currentPhotos]
-        next[targetIndex] = image
-        setPhotos(next)
-        setDevelopingIndex(targetIndex)
-        window.setTimeout(() => setDevelopingIndex(null), 1200)
-        setRetakeSlotIndex(null)
-        stopCamera()
-        setStep(next.filter(Boolean).length === PHOTO_COUNT ? 'result' : 'select')
-      } else {
-        const emptySlot = Array.from({ length: PHOTO_COUNT }, (_, i) => i).find((i) => !currentPhotos[i])
-        const targetIndex = emptySlot ?? currentPhotos.length
-        const next = [...currentPhotos]
-        next[targetIndex] = image
-        setPhotos(next)
-        setDevelopingIndex(targetIndex)
-        window.setTimeout(() => setDevelopingIndex(null), 1200)
-
-        if (next.filter(Boolean).length === PHOTO_COUNT) {
-          stopCamera()
-          setStep('result')
-        } else if (autoPaced) {
-          autoTimerRef.current = window.setTimeout(() => {
-            autoTimerRef.current = null
-            takePhoto(next)
-          }, 1600)
-        }
-      }
+      capture()
     }, 1000)
   }
 
-  async function handleCopyStrip() {
-    if (soundEnabled) playTapSound()
-    const success = await copyStripToClipboard(selectedFrame, photos, {
-      template: selectedTemplate,
-      filterCss: selectedFilter.cssFilter,
-      customNote,
-      stampStyle: selectedStamp,
-      paperFinish: selectedPaper,
-    })
-    if (success) {
-      setCopiedToast(true)
-      window.setTimeout(() => setCopiedToast(false), 2400)
+  const onShutter = () => {
+    if (countdownRef.current || autoRef.current) {
+      clearTimers()
+      return
+    }
+    runCountdown()
+  }
+
+  const onModeChange = (id: TemplateId) => {
+    if (id === templateId) return
+    tap()
+    setTemplateId(id)
+    commitPhotos(emptySlots(getTemplate(id).count))
+  }
+
+  const discardSession = () => {
+    setConfirmOpen(false)
+    clearTimers()
+    setRetakeSlot(null)
+    commitPhotos(emptySlots(template.count))
+    if (step === 'review') {
+      setStep('camera')
+      void startCamera()
     }
   }
 
-  async function handleDownloadAllCuts() {
-    if (soundEnabled) playTapSound()
-    for (let i = 0; i < photos.length; i++) {
-      await downloadSingleCut(photos[i], i, selectedFrame)
-    }
+  const requestDiscard = () => {
+    tap()
+    if (step === 'review' && saved) discardSession()
+    else setConfirmOpen(true)
   }
 
-  async function handleFileUpload(e: ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-
-    try {
-      const loaded: string[] = []
-      const countToTake = Math.min(files.length, PHOTO_COUNT)
-      for (let i = 0; i < countToTake; i++) {
-        const dataUrl = await readImageFile(files[i])
-        loaded.push(dataUrl)
-      }
-
-      const combined = [...photos, ...loaded].slice(0, PHOTO_COUNT)
-      setPhotos(combined)
-
-      stopCamera()
-      setStep(combined.length === PHOTO_COUNT ? 'result' : 'select')
-    } catch {
-      setCameraError(lang === 'vi' ? 'Không thể đọc tệp ảnh.' : 'Could not read image files.')
-    } finally {
-      if (e.target) e.target.value = ''
-    }
-  }
-
-  function resetSession() {
+  const cancelRetake = () => {
+    tap()
     stopCamera()
-    if (timerRef.current) window.clearInterval(timerRef.current)
-    timerRef.current = null
-    setPhotos([])
-    setCountdown(null)
-    setCameraError('')
-    setStep('select')
+    setRetakeSlot(null)
+    setStep('review')
   }
+
+  const onRetake = (index: number) => {
+    tap()
+    setRetakeSlot(index)
+    setStep('camera')
+    void startCamera()
+  }
+
+  const onPickPhotos = () => {
+    tap()
+    fileInputRef.current?.click()
+  }
+
+  const onFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.target
+    const files = Array.from(input.files ?? [])
+    if (files.length === 0) return
+    try {
+      const next = [...photosRef.current]
+      const empty = next.flatMap((photo, index) => (photo ? [] : [index]))
+      const loaded = await Promise.all(files.slice(0, empty.length).map(readImageFile))
+      loaded.forEach((image, order) => {
+        next[empty[order]] = image
+      })
+      if (next.every((photo) => !photo)) return
+      if (photosRef.current.every((photo) => !photo)) setShotDate(new Date())
+      commitPhotos(next)
+      if (isFull(next)) goReview()
+    } catch {
+      showToast(t.fileReadFailed, 'error')
+    } finally {
+      input.value = ''
+    }
+  }
+
+  const printOptions = () => ({
+    template: templateId,
+    filterCss: filter.cssFilter,
+    customNote: note,
+    stampStyle: stamp,
+    paperFinish: paper,
+    date: shotDate,
+  })
+
+  const onSave = async () => {
+    tap()
+    setBusy(true)
+    try {
+      await downloadPrint(frame, photos as string[], printOptions())
+      setSaved(true)
+      showToast(t.saved)
+    } catch {
+      showToast(t.saveFailed, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onCopy = async () => {
+    tap()
+    const ok = await copyPrintToClipboard(frame, photos as string[], printOptions())
+    showToast(ok ? t.copied : t.copyFailed, ok ? 'info' : 'error')
+  }
+
+  const onSaveCut = async (index: number) => {
+    tap()
+    try {
+      await downloadSingleCut(photos[index] as string, index, frame, printOptions())
+    } catch {
+      showToast(t.saveFailed, 'error')
+    }
+  }
+
+  const onSaveCuts = async () => {
+    tap()
+    try {
+      for (let index = 0; index < photos.length; index++) {
+        await downloadSingleCut(photos[index] as string, index, frame, printOptions())
+      }
+      setSaved(true)
+    } catch {
+      showToast(t.saveFailed, 'error')
+    }
+  }
+
+  const switchLanguage = (next: Language) => {
+    setLang(next)
+    document.documentElement.lang = next
+    try {
+      localStorage.setItem('moyoo_lang', next)
+    } catch {
+      // Language still switches for this visit.
+    }
+  }
+
+  const onInstall = async () => {
+    const accepted = await install.promptInstall()
+    setInstallOpen(false)
+    if (accepted) showToast(t.installed)
+  }
+
+  const inSession = photos.some(Boolean)
+  const deniedHelp = {
+    chrome: t.cameraDeniedChrome,
+    edge: t.cameraDeniedEdge,
+    safari: t.cameraDeniedSafari,
+    firefox: t.cameraDeniedFirefox,
+    ios: t.cameraDeniedIos,
+    android: t.cameraDeniedAndroid,
+    other: t.cameraDeniedChrome,
+  }[browser]
+  const errorMessage = !cameraError ? null : cameraError.key === 'cameraDenied' ? deniedHelp : t[cameraError.key]
+  const errorTitle =
+    cameraError && ['cameraDenied', 'cameraSystemDenied', 'cameraEmbedded'].includes(cameraError.key) ? t.cameraBlockedTitle : null
 
   return (
-    <div className={`app-viewport app-viewport--${step}`}>
-      {/* Desktop Ambient Backdrop */}
-      <div className="ambient-backdrop" aria-hidden="true">
-        
-      </div>
-
-      {/* Main Native App Shell */}
-      <div className="app-container">
-        {/* App Bar */}
-        <header className="app-header">
-          <button
-            className="app-brand"
-            aria-label={lang === 'vi' ? 'moyoo — Trang đầu' : 'moyoo — Home'}
-            style={{ cursor: step !== 'welcome' ? 'pointer' : 'default' }}
-            onClick={() => {
-              if (step !== 'welcome') {
-                stopCamera()
-                setStep('welcome')
-              }
-            }}
-          >
-            <span>{t.brand}</span>
-            <span className="brand-period" aria-hidden="true" />
+    <div className={`app app--${step} ${countdown !== null ? 'is-counting' : ''}`}>
+      <header className="topbar">
+        {step === 'camera' && retakeSlot !== null ? (
+          <button type="button" className="chip-btn" onClick={cancelRetake}>
+            <X size={16} />
+            <span>{t.cancelRetake}</span>
           </button>
-          <span className="header-caption">THE EVERYDAY PHOTO STUDIO</span>
+        ) : step === 'camera' && inSession ? (
+          <button type="button" className="icon-btn" onClick={requestDiscard} aria-label={t.discardSession} title={t.discardSession}>
+            <X size={22} />
+          </button>
+        ) : (
+          <span className="brand">
+            moyoo
+            <svg className="brand__heart" viewBox="0 0 24 22" aria-hidden="true">
+              <path d="M12 21C6.2 16.7 1.8 13 1.8 7.6 1.8 4.3 4.3 1.8 7.4 1.8c2 0 3.6 1 4.6 2.6 1-1.6 2.6-2.6 4.6-2.6 3.1 0 5.6 2.5 5.6 5.8 0 5.4-4.4 9.1-10.2 13.4Z" />
+            </svg>
+          </span>
+        )}
+        <div className="topbar__actions">
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => setSoundOn(!soundOn)}
+            aria-label={soundOn ? t.soundOn : t.soundOff}
+            title={soundOn ? t.soundOn : t.soundOff}
+          >
+            {soundOn ? <Volume2 size={21} /> : <VolumeX size={21} />}
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => {
+              tap()
+              setSettingsOpen(true)
+            }}
+            aria-label={t.settings}
+            title={t.settings}
+          >
+            <Settings2 size={21} />
+            {install.route && <span className="icon-btn__dot" aria-hidden="true" />}
+          </button>
+        </div>
+      </header>
 
-          <div className="app-header__actions">
-            {/* Audio Toggle */}
-            <button
-              className="icon-btn"
-              onClick={() => setSoundEnabled(!soundEnabled)}
-              title={soundEnabled ? t.soundOn : t.soundOff}
-              aria-label={soundEnabled ? t.soundOn : t.soundOff}
-            >
-              {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
-            </button>
+      <main className="screen">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple={template.count > 1}
+          hidden
+          aria-label={t.pickPhotos}
+          onChange={(event) => void onFiles(event)}
+        />
+        {step === 'camera' ? (
+          <CameraScreen
+            t={t}
+            lang={lang}
+            template={template}
+            frame={frame}
+            filter={filter}
+            photos={photos}
+            retakeSlot={retakeSlot}
+            status={status}
+            error={errorMessage}
+            errorTitle={errorTitle}
+            errorKey={cameraError?.key ?? null}
+            errorCode={cameraError?.code ?? null}
+            countdown={countdown}
+            flash={flash}
+            developingSlot={developingSlot}
+            facingMode={facingMode}
+            timerSeconds={timerSeconds}
+            autoPaced={autoPaced}
+            videoRef={videoRef}
+            boxRef={boxRef}
+            onOpenCamera={() => {
+              tap()
+              void startCamera()
+            }}
+            onPickPhotos={onPickPhotos}
+            onShutter={onShutter}
+            onFlip={() => {
+              tap()
+              const next = facingMode === 'user' ? 'environment' : 'user'
+              setFacingMode(next)
+              void startCamera(next)
+            }}
+            onModeChange={onModeChange}
+            onFrameChange={(next) => {
+              tap()
+              setFrame(next)
+            }}
+            onFilterChange={(next) => {
+              tap()
+              setFilter(next)
+            }}
+            onTimerToggle={() => {
+              tap()
+              setTimerSeconds(timerSeconds === 3 ? 5 : 3)
+            }}
+            onAutoToggle={() => {
+              tap()
+              setAutoPaced(!autoPaced)
+            }}
+          />
+        ) : (
+          <ReviewScreen
+            t={t}
+            lang={lang}
+            template={template}
+            frame={frame}
+            filter={filter}
+            stamp={stamp}
+            paper={paper}
+            note={note}
+            photos={photos}
+            date={shotDate}
+            developingSlot={developingSlot}
+            busy={busy}
+            onFrameChange={(next) => {
+              tap()
+              setFrame(next)
+            }}
+            onFilterChange={(next) => {
+              tap()
+              setFilter(next)
+            }}
+            onTemplateChange={(id) => {
+              tap()
+              setTemplateId(id)
+            }}
+            onStampChange={(next) => {
+              tap()
+              setStamp(next)
+            }}
+            onPaperChange={(next) => {
+              tap()
+              setPaper(next)
+            }}
+            onNoteChange={setNote}
+            onRetake={onRetake}
+            onSaveCut={(index) => void onSaveCut(index)}
+            onSave={() => void onSave()}
+            onCopy={() => void onCopy()}
+            onSaveCuts={() => void onSaveCuts()}
+            onNewSession={requestDiscard}
+          />
+        )}
+      </main>
 
-            {/* Language Switcher */}
-            <div className="lang-switcher" role="group" aria-label="Language selector">
-              <button
-                className={`lang-btn ${lang === 'vi' ? 'lang-btn--active' : ''}`}
-                onClick={() => switchLanguage('vi')}
-              >
-                VI
-              </button>
-              <button
-                className={`lang-btn ${lang === 'en' ? 'lang-btn--active' : ''}`}
-                onClick={() => switchLanguage('en')}
-              >
-                EN
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {/* App Body Content */}
-        <main className="app-content">
-          <input type="file" ref={fileInputRef} onChange={(e) => void handleFileUpload(e)} multiple accept="image/*" hidden aria-label={t.uploadBtn} />
-          {step !== 'welcome' && <div className="workspace-heading">
-            <div><span className="section-eyebrow">{step === 'select' ? '01 / YOUR CANVAS' : step === 'camera' ? '02 / IN THE MOMENT' : '03 / THE KEEPSAKE'}</span>
-              <h1>{step === 'select' ? (lang === 'vi' ? 'Một khung hình. Rất bạn.' : 'A frame of your own.') : step === 'camera' ? (lang === 'vi' ? 'Cứ là bạn thôi.' : 'Just be yourself.') : (lang === 'vi' ? 'Giữ lại hôm nay.' : 'Keep a little of today.')}</h1></div>
-            <div className="workflow-steps" aria-label={lang === 'vi' ? 'Các bước chụp ảnh' : 'Photo session steps'}>
-              {(['select', 'camera', 'result'] as const).map((item, index) => <span key={item} className={step === item ? 'workflow-step is-current' : 'workflow-step'} aria-current={step === item ? 'step' : undefined}><b>0{index + 1}</b>{(lang === 'vi' ? ['Tùy chỉnh', 'Chụp ảnh', 'Lưu giữ'] : ['Customize', 'Capture', 'Keep'])[index]}</span>)}
-            </div>
-          </div>}
-          {step === 'welcome' && (
-            <Welcome lang={lang} frame={selectedFrame}
-              onFrameChange={(frame) => { setSelectedFrame(frame); if (soundEnabled) playTapSound() }}
-              onEnter={() => { if (soundEnabled) playTapSound(); setStep('select') }}
-              onUpload={() => fileInputRef.current?.click()} />
-          )}
-
-          {/* STEP 1: STUDIO SETUP & PREVIEW */}
-          {step === 'select' && (
-            <div className="studio-main-screen screen-enter">
-              {/* Back to Home Link */}
-              <button
-                className="nav-back-btn"
-                onClick={() => setStep('welcome')}
-                style={{ padding: '0 0 4px', fontSize: 11 }}
-              >
-                <ArrowLeft size={14} />
-                <span>{t.backToWelcome}</span>
-              </button>
-
-              <div className="studio-preview-column">
-              <div className="stage-caption"><span>LIVE PREVIEW</span><span>{selectedTemplate === 'strip-4' ? '01 — FOUR CUT STRIP' : '02 — SQUARE PRINT'}</span></div>
-              <div className="studio-staging">
-                <MiniStrip
-                  frame={selectedFrame}
-                  photos={photos}
-                  template={selectedTemplate}
-                  filterCss={selectedFilter.cssFilter}
-                  stampStyle={selectedStamp}
-                  customNote={customNote}
-                  paperFinish={selectedPaper}
-                  activeSlotIndex={activeSlot}
-                  developingIndex={developingIndex}
-                  onSlotClick={(idx) => {
-                    if (soundEnabled) playTapSound()
-                    setActiveSlot(idx === activeSlot ? null : idx)
-                  }}
-                />
-              </div>
-
-              {/* Contextual Single Slot Action Drawer (Pioneering Feature) */}
-              {activeSlot !== null && (
-                <div className="slot-action-drawer screen-enter">
-                  <div className="slot-action-info">
-                    <span className="slot-action-badge">
-                      {photos[activeSlot]
-                        ? t.retakeSingleSlot.replace('{index}', String(activeSlot + 1))
-                        : (lang === 'vi' ? `Ô ảnh số ${activeSlot + 1}` : `Slot ${activeSlot + 1}`)}
-                    </span>
-                  </div>
-                  <div className="slot-action-btns">
-                    <button
-                      className="slot-btn slot-btn--primary"
-                      onClick={() => startRetakeSlot(activeSlot)}
-                    >
-                      <RotateCcw size={13} />
-                      <span>{photos[activeSlot] ? t.retakeThisPhoto : (lang === 'vi' ? 'Chụp riêng ô này' : 'Shoot this slot')}</span>
-                    </button>
-                    {photos[activeSlot] && (
-                      <button
-                        className="slot-btn"
-                        onClick={() =>
-                          void downloadSingleCut(photos[activeSlot], activeSlot, selectedFrame)
-                        }
-                      >
-                        <Download size={13} />
-                        <span>{lang === 'vi' ? 'Tách riêng ảnh này' : 'Save cut'}</span>
-                      </button>
-                    )}
-                    <button
-                      className="slot-btn slot-btn--icon"
-                      onClick={() => setActiveSlot(null)}
-                      aria-label="Đóng"
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="preview-caption"><span>{lang === 'vi' ? (photos.some(Boolean) ? 'Chạm vào một ô để chỉnh lại ảnh' : 'Ảnh mẫu · Chạm vào một ô để chụp riêng') : (photos.some(Boolean) ? 'Tap a slot to edit your photo' : 'Sample photos · Tap a slot to shoot it')}</span><span>moyoo / 04</span></div>
-              </div>
-              <div className="studio-editor-column">
-              <div className="editor-heading"><span className="section-eyebrow">MAKE IT YOURS</span><h2>{lang === 'vi' ? 'Từng chút, theo ý bạn.' : 'Every detail, your way.'}</h2><p>{lang === 'vi' ? 'Chọn màu giấy, bố cục và sắc ảnh cho câu chuyện của bạn.' : 'Choose the paper, layout and tones for your little story.'}</p></div>
-              {/* Segmented Controls Bar */}
-              <div className="studio-tabs" role="tablist">
-                <button
-                  className={`studio-tab-btn ${activeTab === 'frame' ? 'studio-tab-btn--active' : ''}`}
-                  onClick={() => {
-                    if (soundEnabled) playTapSound()
-                    setActiveTab('frame')
-                  }}
-                  role="tab"
-                  aria-selected={activeTab === 'frame'}
-                >
-                  <Palette size={14} />
-                  <span>{t.tabFrame}</span>
-                </button>
-                <button
-                  className={`studio-tab-btn ${activeTab === 'template' ? 'studio-tab-btn--active' : ''}`}
-                  onClick={() => {
-                    if (soundEnabled) playTapSound()
-                    setActiveTab('template')
-                  }}
-                  role="tab"
-                  aria-selected={activeTab === 'template'}
-                >
-                  <Layers size={14} />
-                  <span>{t.tabTemplate}</span>
-                </button>
-                <button
-                  className={`studio-tab-btn ${activeTab === 'filter' ? 'studio-tab-btn--active' : ''}`}
-                  onClick={() => {
-                    if (soundEnabled) playTapSound()
-                    setActiveTab('filter')
-                  }}
-                  role="tab"
-                  aria-selected={activeTab === 'filter'}
-                >
-                  <SlidersHorizontal size={14} />
-                  <span>{t.tabFilter}</span>
-                </button>
-                <button
-                  className={`studio-tab-btn ${activeTab === 'stamp' ? 'studio-tab-btn--active' : ''}`}
-                  onClick={() => {
-                    if (soundEnabled) playTapSound()
-                    setActiveTab('stamp')
-                  }}
-                  role="tab"
-                  aria-selected={activeTab === 'stamp'}
-                >
-                  <Check size={14} />
-                  <span>{t.tabStamp}</span>
-                </button>
-                <button
-                  className={`studio-tab-btn ${activeTab === 'paper' ? 'studio-tab-btn--active' : ''}`}
-                  onClick={() => {
-                    if (soundEnabled) playTapSound()
-                    setActiveTab('paper')
-                  }}
-                  role="tab"
-                  aria-selected={activeTab === 'paper'}
-                >
-                  <ImageIcon size={14} />
-                  <span>{t.tabFinish}</span>
-                </button>
-              </div>
-
-              {/* Tab 1: Frame Color Swatches */}
-              {activeTab === 'frame' && (
-                <div className="swatches-row" role="group" aria-label="Màu khung">
-                  {frames.map((frame) => {
-                    const isSelected = selectedFrame.id === frame.id
-                    return (
-                      <button
-                        key={frame.id}
-                        className={`swatch-btn ${isSelected ? 'swatch-btn--active' : ''}`}
-                        onClick={() => {
-                          if (soundEnabled) playTapSound()
-                          setSelectedFrame(frame)
-                        }}
-                        aria-label={lang === 'vi' ? frame.name : frame.nameEn}
-                        aria-pressed={isSelected}
-                      >
-                        <span
-                          className="swatch-dot"
-                          style={{ backgroundColor: frame.background }}
-                        />
-                        <span className="swatch-name">
-                          {lang === 'vi' ? frame.name : frame.nameEn}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-
-              {/* Tab 2: Layout Templates */}
-              {activeTab === 'template' && (
-                <div className="templates-row" role="group" aria-label="Bố cục">
-                  {templateOptions.map((opt) => {
-                    const isSelected = selectedTemplate === opt.id
-                    return (
-                      <button
-                        key={opt.id}
-                        className={`template-box ${isSelected ? 'template-box--active' : ''}`}
-                        onClick={() => {
-                          if (soundEnabled) playTapSound()
-                          setSelectedTemplate(opt.id)
-                        }}
-                        aria-pressed={isSelected}
-                      >
-                        <div className="template-icon">
-                          <span className={`layout-diagram layout-diagram--${opt.id}`} aria-hidden="true"><i/><i/><i/><i/></span>
-                        </div>
-                        <div className="template-info">
-                          <h4>{lang === 'vi' ? opt.nameVi : opt.nameEn}</h4>
-                          <p>{lang === 'vi' ? opt.tagVi : opt.tagEn}</p>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-
-              {/* Tab 3: Photo Filters */}
-              {activeTab === 'filter' && (
-                <div className="filter-bar" role="group" aria-label="Bộ lọc">
-                  {photoFilters.map((filt) => {
-                    const isSelected = selectedFilter.id === filt.id
-                    return (
-                      <button
-                        key={filt.id}
-                        className={`filter-chip ${isSelected ? 'filter-chip--active' : ''}`}
-                        onClick={() => {
-                          if (soundEnabled) playTapSound()
-                          setSelectedFilter(filt)
-                        }}
-                        aria-pressed={isSelected}
-                      >
-                        <img className="filter-thumbnail" src={samplePhotos[0]} alt="" style={{ filter: filt.cssFilter }} />
-                        <span>{lang === 'vi' ? filt.nameVi : filt.nameEn}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-
-              {/* Tab 4: Stamps & Signatures */}
-              {activeTab === 'stamp' && (
-                <div className="stamp-editor-panel screen-enter">
-                  <div className="stamp-options-row" role="group" aria-label="Kiểu dấu ấn">
-                    {stampOptions.map((opt) => {
-                      const isSelected = selectedStamp === opt.id
-                      return (
-                        <button
-                          key={opt.id}
-                          className={`stamp-option-btn ${isSelected ? 'stamp-option-btn--active' : ''}`}
-                          onClick={() => {
-                            if (soundEnabled) playTapSound()
-                            setSelectedStamp(opt.id)
-                          }}
-                          aria-pressed={isSelected}
-                        >
-                          <span className="stamp-option-title">
-                            {lang === 'vi' ? opt.nameVi : opt.nameEn}
-                          </span>
-                          <span className="stamp-option-preview">{opt.previewText}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {selectedStamp === 'letterpress' && (
-                    <div className="signature-input-wrap">
-                      <label className="signature-label">{t.signatureLabel}</label>
-                      <input
-                        type="text"
-                        className="signature-input"
-                        value={customNote}
-                        onChange={(e) => setCustomNote(e.target.value)}
-                        placeholder={t.signaturePlaceholder}
-                        maxLength={28}
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Tab 5: Paper Finishes */}
-              {activeTab === 'paper' && (
-                <div className="paper-finishes-row screen-enter" role="group" aria-label="Chất giấy">
-                  {paperFinishes.map((finish) => {
-                    const isSelected = selectedPaper === finish.id
-                    return (
-                      <button
-                        key={finish.id}
-                        className={`paper-finish-btn ${isSelected ? 'paper-finish-btn--active' : ''}`}
-                        onClick={() => {
-                          if (soundEnabled) playTapSound()
-                          setSelectedPaper(finish.id)
-                        }}
-                        aria-pressed={isSelected}
-                      >
-                        <span className={`paper-sample paper-sample--${finish.id}`} aria-hidden="true" />
-                        <span className="paper-finish-name">
-                          {lang === 'vi' ? finish.nameVi : finish.nameEn}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="studio-actions">
-                <button
-                  className="btn-primary"
-                  onClick={() => void startCamera()}
-                  aria-label="Bắt đầu chụp"
-                >
-                  <Camera size={18} />
-                  <span>{t.startCameraBtn}</span>
-                </button>
-
-                <button
-                  className="btn-secondary"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload size={15} />
-                  <span>{t.uploadBtn}</span>
-                </button>
-
-                <p className="caption-hint">{t.cameraHint}</p>
-              </div>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 2: CAMERA CAPTURE (Pioneering Viewfinder Studio) */}
-          {step === 'camera' && (
-            <div className="camera-screen screen-enter">
-              {/* Top Bar with Timer and Mode Controls */}
-              <div className="camera-nav">
-                <button
-                  className="nav-back-btn"
-                  onClick={() => {
-                    stopCamera()
-                    if (retakeSlotIndex !== null) {
-                      setRetakeSlotIndex(null)
-                      setStep('result')
-                    } else {
-                      setPhotos([])
-                      setStep('select')
-                    }
-                  }}
-                >
-                  <ArrowLeft size={16} />
-                  <span>{t.changeFrameBtn}</span>
-                </button>
-
-                <div className="camera-mode-group">
-                  {/* Timer Selector */}
-                  <button
-                    className="camera-ctrl-pill"
-                    onClick={() => {
-                      if (soundEnabled) playTapSound()
-                      setTimerSeconds(timerSeconds === 3 ? 5 : 3)
-                    }}
-                    title={timerSeconds === 3 ? t.timer3s : t.timer5s}
-                  >
-                    <span>{timerSeconds}s</span>
-                  </button>
-
-                  {/* Auto Cadence Toggle */}
-                  {retakeSlotIndex === null && (
-                    <button
-                      className={`camera-ctrl-pill ${autoPaced ? 'camera-ctrl-pill--active' : ''}`}
-                      onClick={() => {
-                        if (soundEnabled) playTapSound()
-                        setAutoPaced(!autoPaced)
-                      }}
-                      title="Chế độ chụp liên tiếp"
-                    >
-                      <span>{autoPaced ? 'Auto 4' : 'Manual'}</span>
-                    </button>
-                  )}
-
-                  {/* Current Slot / Shot Status */}
-                  <div className="camera-tag">
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        width: 8,
-                        height: 8,
-                        borderRadius: 2,
-                        backgroundColor: selectedFrame.background,
-                      }}
-                    />
-                    <span>
-                      {retakeSlotIndex !== null
-                        ? t.retakeSingleSlot.replace('{index}', String(retakeSlotIndex + 1))
-                        : t.shotsCount.replace('{current}', String(photos.length + 1))}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Viewfinder with Live Real-time CSS Filter */}
-              <div className="viewfinder">
-                <span className="corner-reticle corner-reticle--tl" />
-                <span className="corner-reticle corner-reticle--tr" />
-                <span className="corner-reticle corner-reticle--bl" />
-                <span className="corner-reticle corner-reticle--br" />
-
-                {flashActive && <div className="camera-flash" />}
-
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className={`viewfinder-video ${facingMode === 'user' ? 'viewfinder-video--user' : ''}`}
-                  style={{
-                    filter:
-                      selectedFilter.cssFilter !== 'none'
-                        ? selectedFilter.cssFilter
-                        : undefined,
-                  }}
-                  aria-label="Xem trước camera"
-                />
-
-                {!cameraReady && (
-                  <div className="viewfinder-standby">
-                    <Camera size={32} />
-                    <span>{t.cameraPreviewLabel}</span>
-                  </div>
-                )}
-
-                {countdown !== null && (
-                  <div className="countdown-overlay" aria-live="assertive">
-                    <span className="countdown-digits">{countdown}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Live Filter Switcher during Shooting */}
-              <div className="filter-bar" role="group" aria-label="Bộ lọc trực tiếp">
-                {photoFilters.map((filt) => {
-                  const isSelected = selectedFilter.id === filt.id
-                  return (
-                    <button
-                      key={filt.id}
-                      className={`filter-chip ${isSelected ? 'filter-chip--active' : ''}`}
-                      onClick={() => {
-                        if (soundEnabled) playTapSound()
-                        setSelectedFilter(filt)
-                      }}
-                    >
-                      {lang === 'vi' ? filt.nameVi : filt.nameEn}
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* 4 Cuts Progress Reel with Chemical Development Indicator */}
-              <div className="shots-reel">
-                {Array.from({ length: PHOTO_COUNT }, (_, index) => {
-                  const isDone = Boolean(photos[index])
-                  const isCurrent =
-                    retakeSlotIndex !== null ? retakeSlotIndex === index : photos.length === index
-                  const isDeveloping = developingIndex === index
-
-                  return (
-                    <div
-                      key={index}
-                      className={`reel-slot ${isDone ? 'reel-slot--done' : ''} ${
-                        isCurrent ? 'reel-slot--active' : ''
-                      } ${isDeveloping ? 'reel-slot--developing' : ''}`}
-                    >
-                      {photos[index] ? (
-                        <>
-                          <img src={photos[index]} alt={`Shot ${index + 1}`} />
-                          <span className="reel-check">
-                            <Check size={8} strokeWidth={3} />
-                          </span>
-                        </>
-                      ) : (
-                        <span className="reel-num">0{index + 1}</span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Camera Error Alert */}
-              {cameraError && (
-                <div className="camera-error-box" role="alert">
-                  <span className="camera-error-msg">{cameraError}</span>
-                  {!cameraReady && (
-                    <button
-                      className="btn-secondary"
-                      style={{ minHeight: 36, fontSize: 12 }}
-                      onClick={() => void startCamera()}
-                    >
-                      <RotateCcw size={13} />
-                      <span>{t.retakeCameraBtn}</span>
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Hardware Shutter Bar */}
-              <div className="shutter-bar">
-                {/* Flip camera */}
-                <button
-                  className="shutter-sub-btn"
-                  onClick={toggleCameraFlip}
-                  title={t.flipCameraBtn}
-                  aria-label={t.flipCameraBtn}
-                >
-                  <FlipHorizontal size={18} />
-                </button>
-
-                {/* Main Shutter */}
-                <div className="shutter-trigger-outer">
-                  <div className="shutter-ring" />
-                  <button
-                    className="shutter-btn"
-                    onClick={() => takePhoto()}
-                    disabled={!cameraReady || countdown !== null}
-                    aria-label={`Chụp ảnh ${photos.length + 1} / 4`}
-                  >
-                    <Camera size={24} />
-                  </button>
-                </div>
-
-                {/* Upload fallback */}
-                <button
-                  className="shutter-sub-btn"
-                  onClick={() => fileInputRef.current?.click()}
-                  title={t.uploadBtn}
-                  aria-label={t.uploadBtn}
-                >
-                  <ImageIcon size={18} />
-                </button>
-              </div>
-
-              {/* Help Modal */}
-              <Dialog.Root>
-                <Dialog.Trigger asChild>
-                  <button
-                    className="nav-back-btn"
-                    style={{ justifyContent: 'center', opacity: 0.7 }}
-                  >
-                    <HelpCircle size={14} />
-                    <span>{t.cameraHelpBtn}</span>
-                  </button>
-                </Dialog.Trigger>
-                <Dialog.Portal>
-                  <Dialog.Overlay className="dialog-overlay" />
-                  <Dialog.Content className="dialog-content">
-                    <div className="dialog-header">
-                      <Dialog.Title className="dialog-title">
-                        {t.dialogTitle}
-                      </Dialog.Title>
-                      <Dialog.Close asChild>
-                        <button className="dialog-close-btn" aria-label="Đóng">
-                          <X size={15} />
-                        </button>
-                      </Dialog.Close>
-                    </div>
-                    <Dialog.Description className="dialog-body">
-                      {t.dialogDesc}
-                    </Dialog.Description>
-                    <Dialog.Close asChild>
-                      <button className="btn-primary" style={{ minHeight: 44 }}>
-                        {t.dialogClose}
-                      </button>
-                    </Dialog.Close>
-                  </Dialog.Content>
-                </Dialog.Portal>
-              </Dialog.Root>
-            </div>
-          )}
-
-          {/* STEP 3: RESULT & DOWNLOAD (Keepsake Suite & Granular Retakes) */}
-          {step === 'result' && (
-            <div className="result-screen screen-enter">
-              <div className="result-card">
-                {/* Photostrip View with Interactive Slot Highlighting */}
-                <div className="result-preview-column">
-                <div className="stage-caption"><span>YOUR LITTLE STORY</span><span>04 / 04</span></div>
-                <div className="result-strip-box">
-                  <MiniStrip
-                    frame={selectedFrame}
-                    photos={photos}
-                    template={selectedTemplate}
-                    filterCss={selectedFilter.cssFilter}
-                    stampStyle={selectedStamp}
-                    customNote={customNote}
-                    paperFinish={selectedPaper}
-                    activeSlotIndex={activeSlot}
-                    developingIndex={developingIndex}
-                    onSlotClick={(idx) => {
-                      if (soundEnabled) playTapSound()
-                      setActiveSlot(idx === activeSlot ? null : idx)
-                    }}
-                  />
-                </div>
-
-                {/* Single Slot Retake & Cut Action Bar */}
-                {activeSlot !== null && photos[activeSlot] ? (
-                  <div className="slot-action-drawer screen-enter" style={{ margin: '8px 0 4px' }}>
-                    <div className="slot-action-info">
-                      <span className="slot-action-badge">
-                        {t.retakeSingleSlot.replace('{index}', String(activeSlot + 1))}
-                      </span>
-                    </div>
-                    <div className="slot-action-btns">
-                      <button
-                        className="slot-btn slot-btn--primary"
-                        onClick={() => startRetakeSlot(activeSlot)}
-                      >
-                        <RotateCcw size={13} />
-                        <span>{t.retakeThisPhoto}</span>
-                      </button>
-                      <button
-                        className="slot-btn"
-                        onClick={() =>
-                          void downloadSingleCut(photos[activeSlot], activeSlot, selectedFrame)
-                        }
-                      >
-                        <Download size={13} />
-                        <span>{lang === 'vi' ? 'Tách riêng ảnh này' : 'Save cut'}</span>
-                      </button>
-                      <button
-                        className="slot-btn slot-btn--icon"
-                        onClick={() => setActiveSlot(null)}
-                        aria-label="Đóng"
-                      >
-                        <X size={13} />
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="caption-hint" style={{ margin: '6px 0 2px' }}>
-                    {t.tapSlotToRetake}
-                  </p>
-                )}
-
-                </div>
-                <div className="result-editor-column">
-                <div className="editor-heading"><span className="section-eyebrow">THE FINISHING TOUCH</span><h2>{lang === 'vi' ? 'Thêm một dấu ấn.' : 'Make it a keepsake.'}</h2></div>
-                {/* Segmented Controls in Result */}
-                <div className="studio-tabs" role="tablist" style={{ width: '100%', marginTop: 8 }}>
-                  <button
-                    className={`studio-tab-btn ${activeTab === 'frame' ? 'studio-tab-btn--active' : ''}`}
-                    onClick={() => {
-                      if (soundEnabled) playTapSound()
-                      setActiveTab('frame')
-                    }}
-                  >
-                    <Palette size={13} />
-                    <span>{t.tabFrame}</span>
-                  </button>
-                  <button
-                    className={`studio-tab-btn ${activeTab === 'template' ? 'studio-tab-btn--active' : ''}`}
-                    onClick={() => {
-                      if (soundEnabled) playTapSound()
-                      setActiveTab('template')
-                    }}
-                  >
-                    <Layers size={13} />
-                    <span>{t.tabTemplate}</span>
-                  </button>
-                  <button
-                    className={`studio-tab-btn ${activeTab === 'filter' ? 'studio-tab-btn--active' : ''}`}
-                    onClick={() => {
-                      if (soundEnabled) playTapSound()
-                      setActiveTab('filter')
-                    }}
-                  >
-                    <SlidersHorizontal size={13} />
-                    <span>{t.tabFilter}</span>
-                  </button>
-                  <button
-                    className={`studio-tab-btn ${activeTab === 'stamp' ? 'studio-tab-btn--active' : ''}`}
-                    onClick={() => {
-                      if (soundEnabled) playTapSound()
-                      setActiveTab('stamp')
-                    }}
-                  >
-                    <Check size={13} />
-                    <span>{t.tabStamp}</span>
-                  </button>
-                  <button
-                    className={`studio-tab-btn ${activeTab === 'paper' ? 'studio-tab-btn--active' : ''}`}
-                    onClick={() => {
-                      if (soundEnabled) playTapSound()
-                      setActiveTab('paper')
-                    }}
-                  >
-                    <ImageIcon size={13} />
-                    <span>{t.tabFinish}</span>
-                  </button>
-                </div>
-
-                {/* Tab content in Result */}
-                {activeTab === 'frame' && (
-                  <div className="swatches-row" style={{ width: '100%', marginTop: 10 }}>
-                    {frames.map((frame) => (
-                      <button
-                        key={frame.id}
-                        className={`swatch-btn ${selectedFrame.id === frame.id ? 'swatch-btn--active' : ''}`}
-                        onClick={() => {
-                          if (soundEnabled) playTapSound()
-                          setSelectedFrame(frame)
-                        }}
-                        aria-label={lang === 'vi' ? frame.name : frame.nameEn}
-                      >
-                        <span
-                          className="swatch-dot"
-                          style={{ backgroundColor: frame.background }}
-                        />
-                        <span className="swatch-name">
-                          {lang === 'vi' ? frame.name : frame.nameEn}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {activeTab === 'template' && (
-                  <div className="templates-row" style={{ width: '100%', marginTop: 10 }}>
-                    {templateOptions.map((opt) => (
-                      <button
-                        key={opt.id}
-                        className={`template-box ${selectedTemplate === opt.id ? 'template-box--active' : ''}`}
-                        onClick={() => {
-                          if (soundEnabled) playTapSound()
-                          setSelectedTemplate(opt.id)
-                        }}
-                      >
-                        <div className="template-icon">
-                          <span className={`layout-diagram layout-diagram--${opt.id}`} aria-hidden="true"><i/><i/><i/><i/></span>
-                        </div>
-                        <div className="template-info">
-                          <h4>{lang === 'vi' ? opt.nameVi : opt.nameEn}</h4>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {activeTab === 'filter' && (
-                  <div className="filter-bar" style={{ width: '100%', marginTop: 10 }}>
-                    {photoFilters.map((filt) => (
-                      <button
-                        key={filt.id}
-                        className={`filter-chip ${selectedFilter.id === filt.id ? 'filter-chip--active' : ''}`}
-                        onClick={() => {
-                          if (soundEnabled) playTapSound()
-                          setSelectedFilter(filt)
-                        }}
-                      >
-                        <img className="filter-thumbnail" src={samplePhotos[0]} alt="" style={{ filter: filt.cssFilter }} />
-                        <span>{lang === 'vi' ? filt.nameVi : filt.nameEn}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {activeTab === 'stamp' && (
-                  <div className="stamp-editor-panel screen-enter" style={{ width: '100%', marginTop: 10 }}>
-                    <div className="stamp-options-row">
-                      {stampOptions.map((opt) => (
-                        <button
-                          key={opt.id}
-                          className={`stamp-option-btn ${selectedStamp === opt.id ? 'stamp-option-btn--active' : ''}`}
-                          onClick={() => {
-                            if (soundEnabled) playTapSound()
-                            setSelectedStamp(opt.id)
-                          }}
-                        >
-                          <span className="stamp-option-title">
-                            {lang === 'vi' ? opt.nameVi : opt.nameEn}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-
-                    {selectedStamp === 'letterpress' && (
-                      <div className="signature-input-wrap">
-                        <input
-                          type="text"
-                          className="signature-input"
-                          value={customNote}
-                          onChange={(e) => setCustomNote(e.target.value)}
-                          placeholder={t.signaturePlaceholder}
-                          maxLength={28}
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {activeTab === 'paper' && (
-                  <div className="paper-finishes-row screen-enter" style={{ width: '100%', marginTop: 10 }}>
-                    {paperFinishes.map((finish) => (
-                      <button
-                        key={finish.id}
-                        className={`paper-finish-btn ${selectedPaper === finish.id ? 'paper-finish-btn--active' : ''}`}
-                        onClick={() => {
-                          if (soundEnabled) playTapSound()
-                          setSelectedPaper(finish.id)
-                        }}
-                      >
-                        <span className={`paper-sample paper-sample--${finish.id}`} aria-hidden="true" />
-                        <span className="paper-finish-name">
-                          {lang === 'vi' ? finish.nameVi : finish.nameEn}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                </div>
-              </div>
-
-              {/* Keepsake Export Actions */}
-              <div className="studio-actions">
-                <button
-                  className="btn-primary"
-                  onClick={() =>
-                    void downloadStrip(selectedFrame, photos, {
-                      template: selectedTemplate,
-                      filterCss: selectedFilter.cssFilter,
-                      customNote,
-                      stampStyle: selectedStamp,
-                      paperFinish: selectedPaper,
-                    })
-                  }
-                >
-                  <Download size={17} />
-                  <span>{t.downloadPngBtn}</span>
-                </button>
-
-                <div className="export-action-grid">
-                  <button className="btn-secondary" onClick={() => void handleCopyStrip()}>
-                    <Copy size={15} />
-                    <span>{copiedToast ? t.copiedSuccess : t.copyStripBtn}</span>
-                  </button>
-
-                  <button className="btn-secondary" onClick={() => void handleDownloadAllCuts()}>
-                    <Download size={15} />
-                    <span>{t.downloadSingleCuts}</span>
-                  </button>
-                </div>
-
-                <button className="btn-tertiary" onClick={resetSession}>
-                  <RotateCcw size={14} />
-                  <span>{t.newSessionBtn}</span>
-                </button>
-
-                <p className="caption-hint">{t.resultHint}</p>
-              </div>
-            </div>
-          )}
-        </main>
-        <footer className="app-footer"><span>moyoo — moments of you.</span><span>{lang === 'vi' ? 'Ảnh của bạn. Trên thiết bị của bạn.' : 'Your photos. On your device.'}</span><span>© {new Date().getFullYear()}</span></footer>
+      <div className="toast-region" aria-live="polite">
+        {toast && (
+          <p key={toast.id} className={`toast toast--${toast.tone}`} role={toast.tone === 'error' ? 'alert' : 'status'}>
+            {toast.message}
+          </p>
+        )}
       </div>
+
+      <SettingsSheet
+        t={t}
+        lang={lang}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onLanguage={switchLanguage}
+        soundOn={soundOn}
+        onSound={setSoundOn}
+        canInstall={install.route !== null}
+        onInstall={() => {
+          setSettingsOpen(false)
+          setInstallOpen(true)
+        }}
+      />
+
+      <InstallSheet t={t} route={install.route} open={installOpen} onOpenChange={setInstallOpen} onInstall={() => void onInstall()} />
+
+      <Dialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="sheet-overlay" />
+          <Dialog.Content className="sheet">
+            <Dialog.Title className="sheet__title">{t.discardTitle}</Dialog.Title>
+            <Dialog.Description className="sheet__body">{t.discardBody}</Dialog.Description>
+            <div className="sheet__actions">
+              <Dialog.Close asChild>
+                <button type="button" className="btn btn--ghost">
+                  {t.keepPhotos}
+                </button>
+              </Dialog.Close>
+              <button type="button" className="btn btn--danger" onClick={discardSession}>
+                {t.discardConfirm}
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   )
 }

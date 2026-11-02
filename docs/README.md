@@ -1,70 +1,49 @@
-# moyoo — Documentation Hub (AI Agent Harness)
+# Tài liệu moyoo
 
-Welcome! This directory is the **authoritative knowledge harness** for AI agents working on `moyoo`. It is designed to be lightweight, modular, and token-efficient to prevent context window overflow while preserving complete architectural memory.
+Đối chiếu source ngày **2026-11-02**. Đây là tài liệu của phiên bản photobooth frontend hiện có. Các đề xuất kết nối cộng đồng chưa được chọn làm hướng triển khai.
 
----
+## Đọc theo công việc
 
-## 1. Project Overview & Core Identity
-- **Product**: `moyoo` — A boutique, tactile browser photobooth inspired by modern analog craft (Leica, Teenage Engineering) and 35mm darkroom aesthetics.
-- **Tech Stack**: React 18 + TypeScript + Vite + Vanilla CSS (No Tailwind CSS runtime dependency) + Radix UI Dialog + Lucide Icons.
-- **Scope & Boundary**: **100% Frontend & Client-Side**. Zero server, zero database, zero Supabase. All image processing happens in local browser memory via HTML5 Canvas. Photos are never uploaded or persisted to any cloud.
+| Tài liệu | Nội dung |
+| --- | --- |
+| [README dự án](../README.md) | Khởi chạy, chức năng hiện có, giới hạn tổng quan |
+| [PRODUCT.md](../PRODUCT.md) | Người dùng, mục đích, nguyên tắc sản phẩm đã xác nhận |
+| [DESIGN.md](../DESIGN.md) | Hệ thống hình ảnh Purikura (token và thành phần) |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Trạng thái màn hình, camera, nhập ảnh, lifecycle và lưu trữ |
+| [DATA_MODELS.md](DATA_MODELS.md) | Catalog, kiểu dữ liệu và mặc định phiên |
+| [CANVAS_PIPELINE.md](CANVAS_PIPELINE.md) | Capture, kích thước PNG, chữ/dấu và khác biệt preview–export |
+| [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) | Nhận diện hiện tại, CSS, token và responsive |
+| [WORKFLOWS.md](WORKFLOWS.md) | Cách sửa chức năng, đồng bộ docs và xác minh |
+| [PRODUCT_DIRECTION.md](PRODUCT_DIRECTION.md) | Mong muốn của chủ sản phẩm, giả thuyết đang thảo luận và quyết định còn mở |
+| [AGENTS.md](../AGENTS.md) | Quy ước làm việc cho agent |
+| [Skill feature](../skills/moyoo-feature/SKILL.md) | Hướng dẫn thay đổi luồng photobooth |
+| [Skill visual](../skills/moyoo-visual-review/SKILL.md) | Hướng dẫn review UI và responsive |
 
----
+## Bản đồ source
 
-## 2. Invariants & Strict Rules (DO NOT BREAK)
-When modifying this codebase, AI agents **MUST** respect the following rules:
-
-1. **Single Font Mandate**:
-   - The entire app MUST use only `'Google Sans Flex'`.
-   - Never introduce secondary fonts (Inter, Roboto, Serif, etc.).
-   - Canvas text rendering (`context.font`) MUST specify `"Google Sans Flex", sans-serif`.
-2. **Zero AI Clichés**:
-   - No robotic sparkles or AI emojis (e.g., ✦, ✨, 🪄).
-   - No generic marketing fluff. Keep copy short, friendly, and primarily Vietnamese (with English toggle).
-3. **Local Privacy Boundary**:
-   - Never introduce backend endpoints, analytics tracking, or cloud storage without explicit product instruction.
-   - Always stop camera media tracks upon leaving the camera screen or unmounting.
-4. **Clean Verification Gate**:
-   - Before completing any task, execute:
-     ```bash
-     npm run lint        # oxlint (must be 0 errors, 0 warnings)
-     npm run typecheck   # tsc -b
-     npm test            # vitest unit tests
-     npm run build       # vite build
-     ```
-
----
-
-## 3. Documentation Index & Map
-Read only the document relevant to your active subtask to conserve tokens:
-
-| Document | Purpose & Content | Approx. Tokens |
-| :--- | :--- | :--- |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | State machine, screen navigation flow, media stream lifecycle, surgical slot retake. | ~700 |
-| [CANVAS_PIPELINE.md](./CANVAS_PIPELINE.md) | High-res 300DPI canvas math, 1x4 and 2x2 grid rendering, deboss signatures, single cuts. | ~800 |
-| [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) | Color tokens, typography, paper finishes, Web Audio synthesizer (shutter/film advance). | ~700 |
-| [DATA_MODELS.md](./DATA_MODELS.md) | Catalog types (`Frame`, `PhotoFilter`, `Template`, `Stamp`, `PaperFinish`, `i18n`). | ~600 |
-| [WORKFLOWS.md](./WORKFLOWS.md) | How to add frames/filters, update UI, write unit tests, and pre-commit checks. | ~600 |
-
----
-
-## 4. Key Directory Structure
+```text
+src/
+  main.tsx                  React StrictMode và CSS nền
+  index.css                 Tailwind import, reset, token màu và font
+  App.tsx                   State, camera/timer, file input, lưu/sao chép, toast, xác nhận bỏ ảnh
+  App.css                   Toàn bộ thành phần và responsive (Purikura)
+  App.test.tsx              Test luồng app và helper ảnh (camera giả lập)
+  components/CameraScreen.tsx  Khung ngắm, chế độ, công cụ, nút chụp, trợ giúp camera
+  components/ReviewScreen.tsx  Tờ ảnh, tab chỉnh, thanh hành động
+  components/PrintPreview.tsx  Bản DOM của PNG theo getPrintLayout
+  components/Tools.tsx         Rail chọn khung/lọc/bố cục/dấu/giấy
+  data/frames.ts            Frame/filter/template/stamp/paper và đường dẫn ảnh mẫu
+  lib/photo.ts              FileReader, capture, PNG và clipboard
+  lib/i18n.ts               Dictionary VI/EN
+  lib/sound.ts              Web Audio effects
+public/samples/             Bốn ảnh mẫu local
+index.html                  Metadata và viewport
+vite.config.ts              React + Tailwind Vite plugins
+vitest.setup.cjs             Shim Node zlib, không phải bộ mock browser
 ```
-moyoo/
-├── docs/                   # AI Agent Documentation Harness (Modular & Token-Optimized)
-├── skills/                 # Local workspace agent skills
-├── public/                 # Static assets (sample photos for preview)
-├── src/
-│   ├── data/
-│   │   └── frames.ts       # Frame colors, filters, templates, stamps, paper options
-│   ├── lib/
-│   │   ├── photo.ts        # Canvas capture, 300DPI composition, single cuts, clipboard copy
-│   │   ├── sound.ts        # Web Audio synthesizer (shutter, film advance, tactile taps)
-│   │   └── i18n.ts         # Bilingual translations (Vietnamese & English)
-│   ├── App.tsx             # Main application orchestrator & state machine
-│   ├── App.css             # Tactile studio design system & micro-animations
-│   ├── App.test.tsx        # Vitest suite for UI & user interactions
-│   └── main.tsx            # React root mount
-├── package.json
-└── vite.config.ts
-```
+
+## Quy tắc duy trì tài liệu
+
+Source xác định hành vi thực tế. Docs phải mô tả đúng hành vi ấy, kể cả giới hạn; không tự sửa code để làm khớp một mô tả cũ. Khi thay đổi code, cập nhật tài liệu tương ứng trong cùng công việc. Giữ số liệu kỹ thuật ở tài liệu chuyên mục, tránh sao chép nhiều phiên bản dễ lệch.
+
+Kiểm tra build/test là bằng chứng tĩnh và giả lập. Camera thật, clipboard, xuất ảnh trên điện thoại và chất lượng hình ảnh phải có kiểm tra riêng. Không coi mục tiêu thiết kế hoặc ý tưởng sản phẩm là kết quả đã xác minh.

@@ -1,10 +1,14 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import '@fontsource-variable/baloo-2'
 import './index.css'
 import App from './App.tsx'
+import { registerServiceWorker } from './lib/install'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
   </StrictMode>,
 )
+
+if (import.meta.env.PROD) registerServiceWorker()

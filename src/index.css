@@ -1,71 +1,128 @@
 @import "tailwindcss";
 
 :root {
-  --font-app: 'Google Sans Flex', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  
-  --bg-app: #F7F5F0;
-  --bg-surface: #FFFFFF;
-  --bg-subtle: #F0EDE6;
-  --bg-card: #FFFFFF;
-  --text-main: #141413;
-  --text-muted: #6B6862;
-  --text-subtle: #9E9B95;
-  --border-light: #E7E3DB;
-  --border-strong: #CDC7BD;
-  --accent: #141413;
-  --accent-tint: #E8E5DD;
-  
-  font-family: var(--font-app);
-  color: var(--text-main);
-  background: var(--bg-app);
+  --font: 'Baloo 2 Variable', 'Baloo 2', ui-rounded, system-ui, sans-serif;
+
+  --ground: #ffe3f1;
+  --ground-deep: #ffd2e8;
+  --surface: #ffffff;
+  --line: #f6c3dd;
+  --ink: #2b1030;
+  --ink-soft: #6e3f62;
+  --hot: #ff3e9a;
+  --pink: #d6116f;
+  --pink-press: #b30d5c;
+  --violet: #7a3cff;
+  --violet-soft: #ece4ff;
+  --danger: #b3132b;
+
+  /* Camera surround: plum-black so the viewfinder and prints carry the colour. */
+  --night: #120a12;
+  --night-2: #1d121f;
+  --night-3: #2b1c2e;
+  --night-line: rgb(255 255 255 / 0.1);
+  --on-night: #fff4fa;
+  --on-night-soft: #c9b2c4;
+
+  --r-lg: 28px;
+  --r-md: 18px;
+  --r-sm: 12px;
+  --keyline: 0 0 0 3px #fff;
+  --lift: 0 6px 16px rgb(122 60 255 / 0.28);
+  --soft: 0 10px 28px rgb(107 22 74 / 0.14);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--on-night);
+  background: var(--night);
+  color-scheme: dark;
   font-synthesis: none;
-  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  caret-color: var(--pink);
+  accent-color: var(--violet);
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
-  font-family: var(--font-app);
-  -webkit-tap-highlight-color: transparent;
 }
 
-html {
-  scroll-behavior: smooth;
-  height: 100%;
-}
-
+html,
 body {
   margin: 0;
   min-height: 100%;
-  min-width: 320px;
-  background: var(--bg-app);
-  color: var(--text-main);
-  touch-action: manipulation;
-  overflow-x: hidden;
-  font-family: var(--font-app);
 }
 
-button, a, input, select, textarea {
-  font-family: var(--font-app);
+body {
+  min-width: 320px;
+  background: var(--night);
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
 }
 
 button {
   cursor: pointer;
-  user-select: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  touch-action: manipulation;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+button:disabled {
+  cursor: not-allowed;
 }
 
-button:focus-visible, a:focus-visible {
-  outline: 2px solid var(--text-main);
-  outline-offset: 2px;
+:focus-visible {
+  outline: 3px solid var(--violet);
+  outline-offset: 3px;
 }
 
 ::selection {
-  background: #DEDAD1;
-  color: #141413;
+  background: var(--violet);
+  color: #fff;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  background: var(--night-3);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

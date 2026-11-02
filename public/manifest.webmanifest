@@ -1,0 +1,47 @@
+{
+  "id": "/",
+  "name": "moyoo — photobooth",
+  "short_name": "moyoo",
+  "description": "Mở là chụp: 7 bố cục photobooth từ 1 tấm đến lưới 6 và cuộn film, lưu tờ ảnh ngay trên máy. Ảnh không rời khỏi thiết bị.",
+  "lang": "vi",
+  "dir": "ltr",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#FFE3F1",
+  "theme_color": "#FFE3F1",
+  "categories": ["photo", "lifestyle", "entertainment"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Chụp dải 4",
+      "short_name": "Dải 4",
+      "url": "/?mode=strip-4&source=shortcut",
+      "icons": [{ "src": "/icons/shortcut-strip.png", "sizes": "96x96", "type": "image/png" }]
+    },
+    {
+      "name": "Chụp 1 tấm",
+      "short_name": "1 tấm",
+      "url": "/?mode=single&source=shortcut",
+      "icons": [{ "src": "/icons/shortcut-single.png", "sizes": "96x96", "type": "image/png" }]
+    },
+    {
+      "name": "Chụp lưới 4",
+      "short_name": "Lưới 4",
+      "url": "/?mode=grid-2x2&source=shortcut",
+      "icons": [{ "src": "/icons/shortcut-grid.png", "sizes": "96x96", "type": "image/png" }]
+    }
+  ],
+  "screenshots": [
+    { "src": "/screenshots/m-live.webp", "sizes": "390x844", "type": "image/webp", "form_factor": "narrow", "label": "Khung ngắm mặc màu giấy, dải 4 tấm" },
+    { "src": "/screenshots/m-review.webp", "sizes": "390x844", "type": "image/webp", "form_factor": "narrow", "label": "Tờ ảnh, chỉnh khung và lưu PNG" },
+    { "src": "/screenshots/m-review-grid.webp", "sizes": "390x844", "type": "image/webp", "form_factor": "narrow", "label": "Cuộn film 4 khung" },
+    { "src": "/screenshots/desktop-review.webp", "sizes": "1440x900", "type": "image/webp", "form_factor": "wide", "label": "Tờ ảnh trên màn hình lớn" }
+  ]
+}

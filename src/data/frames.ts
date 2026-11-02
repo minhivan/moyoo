@@ -14,14 +14,18 @@ export type PhotoFilter = {
   cssFilter: string
 }
 
-export type TemplateId = 'strip-4' | 'grid-2x2'
+export type TemplateId = 'single' | 'duo' | 'strip-3' | 'strip-4' | 'grid-2x2' | 'grid-6' | 'film-4'
 
 export type TemplateOption = {
   id: TemplateId
   nameVi: string
   nameEn: string
-  tagVi: string
-  tagEn: string
+  /** Number of photos this layout needs. */
+  count: 1 | 2 | 3 | 4 | 6
+  /** Width / height of one photo slot, shared by viewfinder, preview and export. */
+  slotAspect: number
+  /** Slots stack in one column, so the viewfinder can show the strip itself. */
+  column: boolean
 }
 
 export type StampStyle = 'letterpress' | 'timestamp' | 'clean'
@@ -34,9 +38,9 @@ export interface StampOption {
 }
 
 export const stampOptions: StampOption[] = [
-  { id: 'letterpress', nameVi: 'Dập chìm Studio', nameEn: 'Letterpress', previewText: 'moyoo studio • 2026' },
-  { id: 'timestamp', nameVi: 'Dấu cam cổ điển', nameEn: 'Orange Cam', previewText: "'26 10 28 17:30" },
-  { id: 'clean', nameVi: 'Tối giản', nameEn: 'Clean Border', previewText: 'moyoo' },
+  { id: 'letterpress', nameVi: 'Ghi chú', nameEn: 'Note', previewText: 'moyoo studio • 2026' },
+  { id: 'timestamp', nameVi: 'Dấu ngày giờ', nameEn: 'Date stamp', previewText: "'26.11.02 17:30" },
+  { id: 'clean', nameVi: 'Tối giản', nameEn: 'Clean', previewText: 'moyoo studio' },
 ]
 
 export type PaperFinish = 'matte' | 'glossy' | 'fiber'
@@ -48,9 +52,9 @@ export interface PaperFinishOption {
 }
 
 export const paperFinishes: PaperFinishOption[] = [
-  { id: 'matte', nameVi: 'Lì mỹ thuật', nameEn: 'Fine Matte' },
-  { id: 'glossy', nameVi: 'Tráng bóng', nameEn: 'Resin Gloss' },
-  { id: 'fiber', nameVi: 'Thớ sợi film', nameEn: 'Raw Fiber' },
+  { id: 'matte', nameVi: 'Giấy lì', nameEn: 'Matte' },
+  { id: 'glossy', nameVi: 'Giấy bóng', nameEn: 'Glossy' },
+  { id: 'fiber', nameVi: 'Giấy sợi', nameEn: 'Fiber' },
 ]
 
 export const samplePhotos: string[] = [
@@ -79,7 +83,7 @@ export const frames: Frame[] = [
   },
   {
     id: 'butter',
-    name: 'Butter',
+    name: 'Bơ',
     nameEn: 'Butter',
     background: '#F5E8BA',
     ink: '#4A422D',
@@ -87,7 +91,7 @@ export const frames: Frame[] = [
   },
   {
     id: 'blush',
-    name: 'Blush Note',
+    name: 'Hồng phấn',
     nameEn: 'Blush Note',
     background: '#F0CDCE',
     ink: '#57373A',
@@ -95,7 +99,7 @@ export const frames: Frame[] = [
   },
   {
     id: 'blue',
-    name: 'Blue',
+    name: 'Xanh dương',
     nameEn: 'Blue',
     background: '#C9D8E6',
     ink: '#324A5E',
@@ -103,7 +107,7 @@ export const frames: Frame[] = [
   },
   {
     id: 'sage',
-    name: 'Sage',
+    name: 'Xanh lá',
     nameEn: 'Sage',
     background: '#CBD5C8',
     ink: '#30422E',
@@ -151,18 +155,17 @@ export const photoFilters: PhotoFilter[] = [
 ]
 
 export const templateOptions: TemplateOption[] = [
-  {
-    id: 'strip-4',
-    nameVi: 'Dải dọc (1x4)',
-    nameEn: 'Strip (1x4)',
-    tagVi: '4 ảnh xếp dọc',
-    tagEn: '4 vertical cuts',
-  },
-  {
-    id: 'grid-2x2',
-    nameVi: 'Lưới vuông (2x2)',
-    nameEn: 'Grid (2x2)',
-    tagVi: '4 ảnh ô vuông',
-    tagEn: '4 square cuts',
-  },
+  { id: 'single', nameVi: '1 tấm', nameEn: 'Single', count: 1, slotAspect: 720 / 700, column: false },
+  { id: 'duo', nameVi: 'Đôi', nameEn: 'Duo', count: 2, slotAspect: 440 / 587, column: false },
+  { id: 'strip-3', nameVi: 'Dải 3', nameEn: 'Strip 3', count: 3, slotAspect: 592 / 390, column: true },
+  { id: 'strip-4', nameVi: 'Dải 4', nameEn: 'Strip 4', count: 4, slotAspect: 592 / 390, column: true },
+  { id: 'grid-2x2', nameVi: 'Lưới 4', nameEn: 'Grid 4', count: 4, slotAspect: 1, column: false },
+  { id: 'grid-6', nameVi: 'Lưới 6', nameEn: 'Grid 6', count: 6, slotAspect: 460 / 575, column: false },
+  { id: 'film-4', nameVi: 'Cuộn film', nameEn: 'Film roll', count: 4, slotAspect: 280 / 420, column: true },
 ]
+
+export const TEMPLATE_IDS = templateOptions.map((option) => option.id)
+
+export function getTemplate(id: TemplateId): TemplateOption {
+  return templateOptions.find((option) => option.id === id) ?? templateOptions[3]
+}

@@ -1,16 +1,25 @@
+let sharedContext: AudioContext | null = null
+
+/** One AudioContext for the whole page; browsers cap how many can be open. */
+function getAudioContext(): AudioContext | null {
+  if (!sharedContext) {
+    const AudioContextClass =
+      window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextClass) return null
+    sharedContext = new AudioContextClass()
+  }
+  if (sharedContext.state === 'suspended') void sharedContext.resume()
+  return sharedContext
+}
+
 /**
  * Synthesizes a crisp, luxury camera shutter sound using Web Audio API.
  * 100% offline, zero audio file dependencies, pleasant mechanical haptic feedback.
  */
 export function playShutterSound(): void {
   try {
-    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-    if (!AudioContextClass) return
-
-    const ctx = new AudioContextClass()
-    if (ctx.state === 'suspended') {
-      void ctx.resume()
-    }
+    const ctx = getAudioContext()
+    if (!ctx) return
 
     const t = ctx.currentTime
 
@@ -53,13 +62,8 @@ export function playShutterSound(): void {
  */
 export function playTapSound(): void {
   try {
-    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-    if (!AudioContextClass) return
-
-    const ctx = new AudioContextClass()
-    if (ctx.state === 'suspended') {
-      void ctx.resume()
-    }
+    const ctx = getAudioContext()
+    if (!ctx) return
 
     const t = ctx.currentTime
     const osc = ctx.createOscillator()
@@ -87,13 +91,8 @@ export function playTapSound(): void {
  */
 export function playFilmAdvanceSound(): void {
   try {
-    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-    if (!AudioContextClass) return
-
-    const ctx = new AudioContextClass()
-    if (ctx.state === 'suspended') {
-      void ctx.resume()
-    }
+    const ctx = getAudioContext()
+    if (!ctx) return
 
     const t = ctx.currentTime
     const osc = ctx.createOscillator()

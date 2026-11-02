@@ -1,83 +1,51 @@
-# Design System & Aesthetic Tokens
+# Thiết kế và responsive
 
-This document details the visual philosophy, typography, tokens, material finishes, and Web Audio synthesis in `moyoo`.
+Đối chiếu source ngày **2026-11-02**. Hướng hiện tại: **Purikura, biến thể camera tràn màn hình** (chủ sản phẩm chọn 2026-11-02): nền mận đen quanh khung ngắm, khung ngắm mang màu giấy, hồng/tím làm điểm nhấn, bottom sheet sáng. Token đầy đủ nằm ở [DESIGN.md](../DESIGN.md) khi đã được ghi; file này giữ quy tắc làm việc.
 
----
+## Ý tưởng
 
-## 1. Aesthetic Philosophy
-- **Inspiration**: Tactile industrial hardware (Leica, Teenage Engineering) and traditional analog darkroom crafts.
-- **Aesthetic Tenet**: "Warm Editorial Minimalism" — clean utilitarian layouts, tactile micro-borders, authentic physical materiality.
-- **Zero AI Clichés**: No sparkles (✦, ✨), no glowing purple/neon gradients, no fake marketing copy.
+Điện thoại là máy purikura: khung ngắm "mặc" màu giấy đã chọn, bên trong là ô cắt đúng tỉ lệ ô sẽ in. Ở chế độ Dải 4, khung ngắm chính là cột dải ảnh: tấm đã chụp nằm trên, ô kế tiếp nằm dưới, cột trượt lên sau mỗi tấm. Chọn một thứ giống bóc một sticker: nhấc lên, viền tím, nghiêng nhẹ, có dấu tick.
 
----
+## Màu
 
-## 2. Typography Mandate
-- **Single Universal Font**: `'Google Sans Flex'` across all UI elements, headings, buttons, and Canvas text.
-- **Imported in `index.html`**:
-  ```html
-  <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@8..144,400;500;600;700;800&display=swap" rel="stylesheet">
-  ```
-- **CSS Declaration**:
-  ```css
-  :root {
-    --font-app: 'Google Sans Flex', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  }
-  ```
+| Token | Giá trị | Dùng cho |
+| --- | --- | --- |
+| `--ground` | `#FFE3F1` | Nền app |
+| `--surface` | `#FFFFFF` | Nút, thẻ, rail |
+| `--ink` | `#2B1030` | Chữ chính, tab đang chọn |
+| `--ink-soft` | `#6E3F62` | Chữ phụ (≥4.5:1 trên nền hồng và trắng) |
+| `--hot` | `#FF3E9A` | Nút chụp (không có chữ) |
+| `--pink` | `#D6116F` | Nút chính có chữ (Lưu ảnh, Mở camera) |
+| `--violet` | `#7A3CFF` | Trạng thái đang chọn |
+| `--danger` | `#B3132B` | Lỗi, xác nhận bỏ ảnh |
 
----
+Màu khung giấy ở [catalog](DATA_MODELS.md) chỉ dùng cho khung ngắm, preview và PNG.
 
-## 3. Color Tokens
-Defined in `:root` of `src/App.css`:
+## Chữ
 
-| Token | Hex Value | Purpose |
-| :--- | :--- | :--- |
-| `--bg-page` | `#F5F3EF` | Ambient backdrop for desktop viewport |
-| `--bg-app` | `#FFFFFF` | Mobile shell container background |
-| `--bg-subtle` | `#F0EDE6` | Recessed trays, staging card, tab pill track |
-| `--bg-hover` | `#EBE7DF` | Button hover & active tactile states |
-| `--text-main` | `#141413` | Primary copy, heavy headings, active frames |
-| `--text-muted` | `#66635D` | Secondary labels, descriptions, inactive tabs |
-| `--text-subtle` | `#99958E` | Placeholder text, timestamps, slot indices |
-| `--border-light` | `#E7E3DC` | Subtle card dividers and slot borders |
-| `--border-strong`| `#CCC7BD` | Active state outlines and focus rings |
+Một họ chữ: **Baloo 2** (variable, self-host qua `@fontsource-variable/baloo-2`, có tập Vietnamese). Cỡ làm việc 16px (nút, rail 14–15px, chú thích 13–14px); cỡ hiển thị chỉ cho logo (28px) và số đếm ngược; tiêu đề màn tờ ảnh chỉ dành cho trình đọc màn hình. Canvas dùng cùng font.
 
----
+## Hình khối và chuyển động
 
-## 4. Material Paper Finishes (`PaperFinish`)
+- Bo góc 28 / 18 / 12px, viên thuốc cho chế độ và tab. Viền trắng 3–4px kiểu sticker quanh khung ngắm và ô ảnh.
+- Một ngữ pháp chuyển động: `--spring` 400ms có vượt nhẹ cho chọn, khay, sheet, toast; số đếm ngược bật ra; ảnh "tráng" từ sáng mờ về rõ trong 1,2s. `prefers-reduced-motion` tắt gần hết chuyển động.
+- Hình vẽ tay: trái tim hồng cạnh logo và trên dấu Ghi chú, ngôi sao trên dấu Tối giản (`src/lib/materials.ts`). Không dùng emoji hay ký tự Unicode thay icon; icon lấy từ Lucide.
+- Chuyển động `--spring` có vượt nhẹ là chủ ý của hướng Purikura; bộ phát hiện thiết kế báo advisory "bounce-easing" và được để nguyên. Layout (như `aspect-ratio`) dùng `--out`, không nảy.
 
-| Finish (`id`) | Visual Simulation in CSS | Purpose |
-| :--- | :--- | :--- |
-| `'matte'` | Default diffuse surface, soft shadow | Standard fine art matte photo paper |
-| `'glossy'` | `.mini-strip--glossy .mini-strip__sheen`: linear-gradient 135deg specular highlight with inset edge sheen | Resin-coated glossy darkroom print |
-| `'fiber'` | `.mini-strip--fiber`: radial-gradient 4px fiber dot matrix | Raw textured fiber paper |
+## Bố cục
 
----
+| Kích thước | Hành vi |
+| --- | --- |
+| Điện thoại | Cột app toàn màn hình, tối đa 520px. Khung ngắm 3:4 rộng `min(100%, (100dvh − 372px) × 0.75)`, tối thiểu 200px. Nút chụp ở vùng ngón cái. Review có thanh hành động dính đáy: Sao chép · Lưu ảnh · Chụp mới |
+| ≥768px | Thanh trên cao hơn, khoảng cách rộng hơn; camera vẫn là cột giữa |
+| ≥960px | Review hai cột: tờ ảnh bên trái (dính khi cuộn), công cụ và hành động bên phải; cột app rộng tối đa 1040px |
 
-## 5. Chemical Development Simulation
-Simulates the chemical exposure of photographic paper in a darkroom:
-```css
-@keyframes photoDevelopTone {
-  0%   { filter: brightness(2.2) contrast(0.6) saturate(0.2); transform: scale(0.98); }
-  60%  { filter: brightness(1.2) contrast(0.9) saturate(0.8); }
-  100% { filter: brightness(1) contrast(1) saturate(1); transform: scale(1); }
-}
+Pinch zoom được giữ (`viewport` không khóa zoom), safe-area được tôn trọng.
 
-@keyframes chemicalFlashFade {
-  0%   { opacity: 0.85; }
-  40%  { opacity: 0.45; }
-  100% { opacity: 0; }
-}
-```
+## Âm thanh
 
----
+`sound.ts` tạo âm bằng Web Audio với một `AudioContext` dùng chung: tiếng màn trập, tiếng tua phim (sawtooth 420→320Hz, 140ms), tiếng chạm. Nút loa ở thanh trên bật/tắt.
 
-## 6. Web Audio Synthesizer (Offline Sound Design)
-Located in `src/lib/sound.ts`. Requires zero external audio files and runs completely offline.
+## Review hình ảnh
 
-1. **`playShutterSound()`**:
-   - Curtain opening: Triangle wave, frequency ramp `1400Hz -> 150Hz` over `35ms`.
-   - Curtain closing clack: Sine wave, frequency ramp `950Hz -> 90Hz` at `55ms -> 120ms`.
-2. **`playFilmAdvanceSound()`**:
-   - Motorized winding whirr: Dual oscillators (`180Hz -> 280Hz` triangle wave + `90Hz` low hum) over `280ms`.
-3. **`playTapSound()`**:
-   - Micro tactile click: Sine wave, frequency ramp `1800Hz -> 300Hz` over `20ms`.
+Kiểm tra theo [WORKFLOWS.md](WORKFLOWS.md). Ảnh chụp màn hình theo viewport không xác nhận camera thật, safe-area hay bàn phím trên thiết bị.
